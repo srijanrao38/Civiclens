@@ -1,0 +1,26 @@
+# Render Blueprint for the CivicLens backend.
+#
+# The database is deliberately NOT defined here. Create it once in the Render
+# dashboard and paste its Internal Database URL into DATABASE_URL, so syncing
+# this file can never create a second database or replace the existing one.
+services:
+  - type: web
+    name: civiclens-backend
+    runtime: python
+    plan: free
+    rootDir: CivicLens-Backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input && python manage.py migrate --no-input
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.6
+      - key: DEBUG
+        value: "False"
+      # Generated once by Render and kept across later deploys.
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SIGNING_KEY
+        generateValue: true
+      # sync: false means Render asks you for this value; it is never in Git.
+      - key: DATABASE_URL
+        sync: false
