@@ -174,6 +174,20 @@ STORAGES = {
 }
 
 
+# Report photos: Cloudinary when fully configured, local disk only in development.
+# Production has no fallback because Render's disk is wiped on every deploy.
+CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='')
+CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
+CLOUDINARY_API_SECRET = config('CLOUDINARY_API_SECRET', default='')
+
+if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
+    REPORT_PHOTO_BACKEND = 'cloudinary'
+elif DEBUG:
+    REPORT_PHOTO_BACKEND = 'local'
+else:
+    REPORT_PHOTO_BACKEND = None
+
+
 # HTTPS and cookie security, active whenever DEBUG is off.
 if not DEBUG:
     # Render handles HTTPS and forwards plain HTTP, labelled with this header.

@@ -1,16 +1,22 @@
 
+import logging
 from uuid import uuid4
 
+import cloudinary.uploader
+from cloudinary.exceptions import Error as CloudinaryError
 from django.conf import settings
 from django.core.files.storage import default_storage
 from rest_framework import generics, permissions
 from rest_framework.parsers import MultiPartParser, FormParser
+from .images import strip_image_metadata
 from .models import Report
 from .serializers import PublicReportSerializer, ReportSerializer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .permissions import IsApprovedOfficial
+
+logger = logging.getLogger(__name__)
 
 
 def detect_image_extension(upload):
@@ -91,10 +97,48 @@ class ReportPhotoUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        filename = default_storage.save(
-            f"report_photos/{uuid4().hex}{extension}", photo
-        )
-        url = request.build_absolute_uri(settings.MEDIA_URL + filename)
+        try:
+            photo = strip_image_metadata(photo, extension)
+        except Exception:
+            # Decoders raise many types on bad input. Never store the original.
+            return Response(
+                {"detail": "This image could not be processed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if settings.REPORT_PHOTO_BACKEND == "cloudinary":
+            try:
+                result = cloudinary.uploader.upload(
+                    photo,
+                    cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+                    api_key=settings.CLOUDINARY_API_KEY,
+                    api_secret=settings.CLOUDINARY_API_SECRET,
+                    resource_type="image",
+                    folder="report_photos",
+                    public_id=uuid4().hex,
+                    overwrite=False,
+                    timeout=20,
+                )
+            except CloudinaryError as error:
+                # Only the type: the SDK's messages can echo request details.
+                logger.error("Cloudinary upload failed: %s", type(error).__name__)
+                return Response(
+                    {"detail": "Could not store the photo. Please try again."},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+            url = result["secure_url"]
+        elif settings.REPORT_PHOTO_BACKEND == "local":
+            filename = default_storage.save(
+                f"report_photos/{uuid4().hex}{extension}", photo
+            )
+            url = request.build_absolute_uri(settings.MEDIA_URL + filename)
+        else:
+            logger.error("Report photo upload rejected: Cloudinary is not configured.")
+            return Response(
+                {"detail": "Photo storage is not available."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         return Response({"photo": url}, status=status.HTTP_201_CREATED)
 
 
